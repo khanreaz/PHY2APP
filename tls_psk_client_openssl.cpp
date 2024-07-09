@@ -70,13 +70,13 @@ int main() {
 
         OpenSSLContext ctx(TLS_client_method());
         SSL_CTX_set_psk_client_callback(ctx.get(), psk_client_cb);
-        SSL_CTX_set_min_proto_version(ctx.get(), TLS1_2_VERSION);
+        SSL_CTX_set_min_proto_version(ctx.get(), TLS1_3_VERSION);
 
         // Cipher list (optional, but good practice for compatibility)
-        const char* ciphers = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256";
-        if (SSL_CTX_set_cipher_list(ctx.get(), ciphers) != 1) {
-            throw std::runtime_error("Error setting cipher list");
-        }
+        // const char* ciphers = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256";
+        // if (SSL_CTX_set_cipher_list(ctx.get(), ciphers) != 1) {
+        //     throw std::runtime_error("Error setting cipher list");
+        // }
 
         int sockfd = socket(AF_INET, SOCK_STREAM, 0);
         if (sockfd < 0) throw std::runtime_error("Error creating socket");
