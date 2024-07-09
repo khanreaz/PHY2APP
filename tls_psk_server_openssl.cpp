@@ -92,10 +92,10 @@ int main() {
         SSL_CTX_set_psk_server_callback(ctx.get(), psk_server_cb);
 
         // Cipher suite specific to TLS 1.3
-        const char* ciphers = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256";
-        if (SSL_CTX_set_cipher_list(ctx.get(), ciphers) != 1) {
-            throw std::runtime_error("Error setting cipher list");
-        }
+        //const char* ciphers = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256";
+        //if (SSL_CTX_set_cipher_list(ctx.get(), ciphers) != 1) {
+        //    throw std::runtime_error("Error setting cipher list");
+        //}
 
         int server_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (server_fd < 0) {
