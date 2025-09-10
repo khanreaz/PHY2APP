@@ -1,0 +1,72 @@
+theory EnhancedWiFiProtocol
+begin
+
+// Functions
+functions: 
+  gen_passphrase/1, hash/1, encrypt/2, decrypt/2, success/0, ssid/0, mac/2, 
+  broadcast/1, assoc_req/2, nonce/1, kdf/1, hmac/2
+
+// Facts
+builtins: symmetric-encryption
+
+// Rules
+
+// Authenticator broadcasts ID in Wi-Fi infrastructure mode
+rule Authenticator_Broadcasts:
+  [ Fr(~ID), Fr(~Na) ] 
+  -->
+  [ Out(broadcast(<~ID, ~Na>)) ]  // Authenticator broadcasts ID with nonce Na
+
+// Authenticator starts ComPass protocol to generate passphrase
+rule Authenticator_Starts_ComPass:
+  [ In(broadcast(<ID, Na>)), Fr(~passphrase1), Fr(~Nb) ]
+  -->
+  [ Out(encrypt(<gen_passphrase(~passphrase1), ~Nb>, ~passphrase1)) ]  // Encrypted passphrase with nonce Nb
+
+// Authenticator sends Enrollee's details to Access Point
+rule Authenticator_Sends_To_AP:
+  [ In(encrypt(<gen_passphrase(~passphrase1), Nb>, passphrase1)), Fr(~key1) ]
+  -->
+  [ Out(<mac(ID, gen_passphrase(~passphrase1)), kdf(~key1)>) ]  // Secure MAC with derived key
+
+// Access Point sends its SSID and MAC to Enrollee
+rule AP_Sends_To_Enrollee:
+  [ In(<mac(ID, gen_passphrase(~passphrase1)), kdf(key1)>), Fr(~key2) ]
+  -->
+  [ Out(encrypt(<mac(ssid, gen_passphrase(~passphrase1)), kdf(~key2)>, ~key1)) ]  // Secure response with derived key
+
+// Enrollee verifies and establishes a secure connection
+// rule Enrollee_Verifies_Secure_Connect:
+//   [ In(encrypt(<mac(ssid, gen_passphrase(~passphrase1)), kdf(key2)>, key1)), Fr(~key_final) ]
+//   -->
+//   [ Out(secure_connect(kdf(~key_final))) ]  // Final secure key derivation and confirmation
+
+// Lemmas for Security Properties
+
+// Confidentiality of Passphrase
+lemma confidentiality_of_passphrase:
+  "not (Ex passphrase. Attacker(gen_passphrase(passphrase)))"
+
+// Mutual Authentication
+lemma mutual_authentication:
+  "All ID Na Nb key_final. 
+    In(secure_connect(kdf(key_final))) ==> 
+    (Ex key1 key2. In(encrypt(<mac(ID, gen_passphrase(~passphrase1)), kdf(key2)>, key1)))"
+
+// Integrity of Messages
+lemma integrity_of_messages:
+  "not (Ex ID Na Nb. Attacker(mac(ID, gen_passphrase(~passphrase1))))"
+
+// Replay Protection
+lemma replay_protection:
+  "not (Ex ID Na. Attacker(broadcast(<ID, Na>)))"
+
+// Existence of Trace
+lemma exists_trace_example:
+  exists-trace
+    "Ex ID Na Nb passphrase1 key_final #i #j.
+      broadcast(<ID, Na>) @ #i &
+      secure_connect(kdf(key_final)) @ #j &
+      #i < #j"
+
+end
