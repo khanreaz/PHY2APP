@@ -1,0 +1,92 @@
+theory SecureSketch
+begin
+
+functions: 
+  reconcile/2, success/0, failure/0
+
+// Enrollee sends a helper bitstring to the network.
+// Fr(~S_s) generates a fresh value for the helper bitstring ~S_s.
+rule Enrollee_Sends_Helper:
+  [ Fr(~S_s) ]
+  -->
+  [ Out(~S_s) ]  // Output the fresh bitstring ~S_s to the network.
+
+// Authenticator receives the helper bitstring and performs reconciliation.
+// In(S_s) represents the receipt of the bitstring S_s from the network.
+// Out(reconcile(S_s, 'Q_B')) represents the result of reconciling S_s with a value 'Q_B'.
+rule Authenticator_Reconciles:
+  [ In(S_s) ]
+  -->
+  [ Out(reconcile(S_s, 'Q_B')) ]  // Output the result of reconciling the received S_s with 'Q_B'.
+
+// Authenticator sends a success or failure message based on the reconciliation.
+// In(reconcile(S_s, 'Q_B')) means the authenticator receives the reconciliation result.
+rule Authenticator_Sends_Result:
+  [ In(reconcile(S_s, 'Q_B')) ]
+  -->
+  [ Out(success) ] // Authenticator outputs a success message. Alternatively, it could output failure.
+
+// Security properties
+
+// Authentication: Ensure that the enrollee receives a valid response from the authenticator.
+// This lemma ensures that a success message is only sent after receiving the corresponding S_s.
+lemma Authentication:
+  "All S_s #i #j.
+    (In(S_s) @ #i & Out(success) @ #j) ==> #i < #j"  // The input must precede the output.
+
+// Replay attack prevention: Ensure that the helper bitstring S_s is not reused.
+// This restriction prevents an attacker from reusing the same helper bitstring in multiple sessions.
+restriction No_Replay_Attack:
+  "All S_s #i #j.
+    (In(S_s) @ #i & In(S_s) @ #j) ==> #i = #j"  // The same bitstring S_s can only be used once.
+
+// Man-in-the-middle attack prevention: Ensure integrity of the reconciliation process.
+// This lemma ensures that the reconciliation output can only happen if it is preceded by the correct input.
+lemma No_MITM_Attack:
+  "All S_s #i #j.
+    (In(S_s) @ #i & Out(reconcile(S_s, 'Q_B')) @ #j) ==> #i < #j"  // The input must precede the reconciliation output.
+
+// Existence of a successful trace: Ensure that the protocol can successfully complete.
+// This lemma ensures there exists a successful trace where a valid helper bitstring leads to a success message.
+// lemma Exists_Successful_Trace:
+//   exists-trace
+//   "Ex S_s #i #j.
+//     In(S_s) @ #i & Out(success) @ #j"  // There must be a trace where the input leads to a success output.
+
+// Secrecy of the reconciled key: Ensure that the reconciled key is not leaked to unauthorized parties.
+// This lemma ensures that the reconciled value is not known by the adversary unless explicitly revealed.
+lemma Reconciled_Secrecy:
+  "All S_s k #i #j.
+    (Out(reconcile(S_s, 'Q_B')) @ #i & K(k) @ #j) ==> not(k = reconcile(S_s, 'Q_B'))"  // The reconciled value must remain secret.
+
+// Injective authentication: Ensure that no two sessions use the same value for S_s.
+// This lemma guarantees that if two success outputs are seen, they must correspond to distinct session indices.
+// lemma Injective_Authentication:
+//   "All #i #j.
+//     (Out(success) @ #i & Out(success) @ #j & #i != #j) ==> False"  // Each success output must correspond to a unique session.
+
+// Key confirmation: Ensure that both enrollee and authenticator agree on the derived key.
+// This lemma ensures that the authenticator confirms the key before the success message is sent.
+lemma Key_Confirmation:
+  "All S_s #i #j.
+    (In(S_s) @ #i & Out(success) @ #j) ==> (Ex #k. ConfirmKey($A, S_s) @ #k & #i < #k & #k < #j)"  // The key must be confirmed before success.
+
+// Non-repudiation of key agreement: Ensure that neither party can deny participation in the protocol.
+// This lemma ensures that if a success message is output, there must have been a corresponding input.
+// lemma Non_Repudiation:
+//   "All S_s #i.
+//     (Out(success) @ #i) ==> (Ex #j. In(S_s) @ #j & #j < #i)"  // Success output implies prior input.
+
+// No unauthorized key reveal: Ensure that keys are only revealed if explicitly allowed.
+// This lemma ensures that the key is not known to the adversary unless explicitly revealed by a RevealKey action.
+// lemma No_Key_Reveal:
+//   "All k #i.
+//     (K(k) @ #i) ==> (Ex #j A. RevealKey($A, k) @ #j & #j < #i)"  // Keys are not leaked without explicit authorization.
+
+// Uniqueness of session identifiers: Ensure that each session has a unique identifier.
+// This lemma ensures that no two sessions can share the same identifier, preventing cross-session attacks.
+lemma Unique_Session_ID:
+  "All S_s1 S_s2 #i #j.
+    (Out(S_s1) @ #i & Out(S_s2) @ #j & S_s1 = S_s2) ==> #i = #j"  // Session identifiers must be unique.
+
+end

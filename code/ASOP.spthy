@@ -1,0 +1,104 @@
+theory ASOPprotocol
+begin
+
+functions:
+  register/1, gen_keypair/1, transient_token/1, add_device_request/1, device_request/3, validate/1, new_keypair/1, registration_success/1, nonce/1, encrypt/2, sign/2, session_id/1
+
+// Secure Channel (H_s) between Authenticator and Server
+rule Secure_Channel_Authenticator_Server:
+  [ Fr(sessionID), Fr(keypair1), Fr(keypair2) ]
+  -->
+  [ Out(session_id(sessionID)), Out(gen_keypair(keypair1)), Out(gen_keypair(keypair2)) ]  // Secure channel initialization with session ID and key pairs
+
+// Public Channel (H_p) between Enrollee and Server
+rule Public_Channel_Enrollee_Server:
+  [ Fr(public_message) ]
+  -->
+  [ Out(public_message) ]  // Public, unauthenticated message that can be intercepted
+
+// User registers with the IoT service provider (userID is encrypted)
+rule User_Registers:
+  [ Fr(userID), Fr(key) ]
+  -->
+  [ Out(encrypt(register(userID), key)) ]  // User registers with an encrypted ID over a secure channel
+
+// Server and Authenticator generate two key pairs
+rule Generate_KeyPairs:
+  [ In(encrypt(register(userID), key)), Fr(keypair1), Fr(keypair2) ]
+  -->
+  [ Out(gen_keypair(keypair1)), Out(gen_keypair(keypair2)) ]  // Generate two key pairs for secure communication
+
+// User requests to add a device (encrypted request over public channel H_p)
+rule User_Add_Device_Request_Public_Channel:
+  [ In(encrypt(register(userID), key)), Fr(deviceID), Fr(key) ]
+  -->
+  [ Out(encrypt(add_device_request(deviceID), key)) ]  // User requests to add a device with encrypted details
+
+// Server generates a transient token and sends it to the Authenticator over secure channel H_s
+rule Server_Generates_Token_Secure_Channel:
+  [ In(encrypt(add_device_request(deviceID), key)), In(session_id(sessionID)), Fr(token), Fr(key) ]
+  -->
+  [ Out(encrypt(transient_token(token), key)) ]  // Server generates a transient token over a secure channel
+
+// Authenticator sends the transient token and nonce to the device over public channel H_p (signed)
+rule Authenticator_Sends_Token_To_Device_Public_Channel:
+  [ In(encrypt(transient_token(token), key)), Fr(nonce), Fr(auth_key) ]
+  -->
+  [ Out(sign(device_request(deviceID, token, nonce(nonce)), auth_key)) ]  // Authenticator sends the token and nonce to the device (signed) over public channel
+
+// Device sends request to server with nonce over public channel H_p (signed)
+rule Device_Sends_Request_To_Server_Public_Channel:
+  [ In(sign(device_request(deviceID, token, nonce), auth_key)), Fr(device_key) ]
+  -->
+  [ Out(sign(validate(token, nonce), device_key)) ]  // Device sends request to server using signed token and nonce
+
+// Server validates the signed request and generates a new key pair for the device over secure channel H_s
+rule Server_Validates_And_Generates_KeyPair_Secure_Channel:
+  [ In(sign(validate(token, nonce), device_key)), In(session_id(sessionID)), Fr(new_keypair_device) ]
+  -->
+  [ Out(new_keypair(new_keypair_device)) ]  // Server validates and generates a new key pair for the device
+
+// Server notifies that the device is registered successfully over secure channel H_s
+rule Device_Registration_Success_Secure_Channel:
+  [ In(new_keypair(new_keypair_device)), In(session_id(sessionID)) ]
+  -->
+  [ Out(registration_success(deviceID)) ]  // Server notifies that the device is registered successfully
+
+// Security properties
+
+// Authentication: Ensure that the registration success message can only be sent if the device's request was validated.
+lemma Authentication:
+  "All token deviceID nonce #i #j.
+    (In(sign(validate(token, nonce), device_key)) @ #i & Out(registration_success(deviceID)) @ #j) ==> #i < #j"
+
+// Token integrity: Ensure that a transient token can only be used by the device that received it.
+restriction Token_Integrity:
+  "All token deviceID1 deviceID2 #i #j.
+    (Out(sign(device_request(deviceID1, token, nonce), auth_key)) @ #i & In(sign(device_request(deviceID2, token, nonce), auth_key)) @ #j) ==> deviceID1 = deviceID2"
+
+// Confidentiality of the generated key pair: Ensure that the key pair generated for the device is confidential.
+lemma Keypair_Confidentiality:
+  "All new_keypair_device #i #j.
+    (Out(new_keypair(new_keypair_device)) @ #i & K(new_keypair_device) @ #j) ==> #i = #j"
+
+// Replay prevention: Ensure that the transient token and nonce cannot be reused by an attacker.
+restriction No_Replay_Token_And_Nonce:
+  "All token nonce #i #j.
+    (In(transient_token(token)) @ #i & In(nonce(nonce)) @ #i & In(transient_token(token)) @ #j & In(nonce(nonce)) @ #j) ==> #i = #j"
+
+// Key validation: Ensure that the key used to encrypt and sign the messages is validated by both parties.
+lemma Key_Validation:
+  "All keypair1 keypair2 #i #j.
+    (Out(gen_keypair(keypair1)) @ #i & Out(gen_keypair(keypair2)) @ #j) ==> #i < #j"
+
+// Mutual authentication: Ensure that the device and server authenticate each other before key pair generation.
+lemma Mutual_Authentication:
+  "All token deviceID new_keypair_device nonce #i #j #k.
+    (In(sign(device_request(deviceID, token, nonce), auth_key)) @ #i & In(sign(validate(token, nonce), device_key)) @ #j & Out(new_keypair(new_keypair_device)) @ #k) ==> (#i < #j & #j < #k)"
+
+// Public channel vulnerability: Ensure that messages sent over the public channel (H_p) are vulnerable to interception.
+lemma Public_Channel_Vulnerability:
+  "All public_message #i #j.
+    (Out(public_message) @ #i & K(public_message) @ #j) ==> #i < #j"  // Messages on the public channel can be intercepted by an adversary
+
+end

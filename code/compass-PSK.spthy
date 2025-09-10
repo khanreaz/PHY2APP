@@ -1,0 +1,108 @@
+theory CustomWiFiProtocol
+begin
+
+functions: 
+  gen_passphrase/1, hash/1, success/0, ssid/0, mac/2, broadcast/1, assoc_req/2, secure_connect/1, delete_passphrase/1
+
+// Authenticator broadcasts ID in Wi-Fi infrastructure mode
+rule Authenticator_Broadcasts:
+  [ Fr(~ID) ]
+  -->
+  [ Out(broadcast(~ID)) ]  // Authenticator broadcasts its ID
+
+// Authenticator selects Enrollee and starts ComPass protocol to generate passphrase1
+rule Authenticator_Starts_ComPass:
+  [ In(broadcast(ID)), Fr(~passphrase1) ]
+  -->
+  [ Out(gen_passphrase(~passphrase1)) ]  // Generate passphrase_1 for enrollee
+
+// Authenticator sends Enrollee's details to Access Point
+rule Authenticator_Sends_To_AP:
+  [ In(gen_passphrase(~passphrase1)) ]
+  -->
+  [ Out(mac(ID, ~passphrase1)) ]  // Send Enrollee's (MAC + passphrase_1)
+
+// Access Point sends its MAC + SSID to Enrollee
+rule AP_Sends_To_Enrollee:
+  [ In(mac(ID, ~passphrase1)) ]
+  -->
+  [ Out(mac(ssid, ~passphrase1)) ]  // Send Access Point's details (MAC + SSID)
+
+// Enrollee switches to Wi-Fi client mode and sends Association Request
+rule Enrollee_Sends_Assoc_Request:
+  [ In(mac(ssid, ~passphrase1)), Fr(~passphrase1) ]
+  -->
+  [ Out(assoc_req(ssid, hash(~passphrase1))) ]  // Enrollee sends association request with hashed passphrase_1
+
+// Access Point verifies request and starts ComPass to generate passphrase2
+rule AP_Verifies_Assoc_Request:
+  [ In(assoc_req(ssid, hash(~passphrase1))), Fr(~passphrase2) ]
+  -->
+  [ Out(gen_passphrase(~passphrase2)) ]  // Access Point generates passphrase_2
+
+// Securely connect
+rule Secure_Connection:
+  [ In(gen_passphrase(~passphrase2)) ]
+  -->
+  [ Out(secure_connect(success)) ]  // Establish a secure connection
+
+// Both parties delete passphrase_1
+rule Delete_Passphrase:
+  [ In(secure_connect(success)) ]
+  -->
+  [ Out(delete_passphrase(~passphrase1)) ]  // Both parties delete passphrase_1
+
+// Security properties
+
+// Authentication: Ensure that a secure connection is established only after generating passphrase_2.
+lemma Authentication:
+  "All passphrase2 #i #j.
+    (In(gen_passphrase(passphrase2)) @ #i & Out(secure_connect(success)) @ #j) ==> #i < #j"
+
+// Replay attack prevention: Ensure that passphrase_1 cannot be reused by an attacker.
+restriction No_Replay_Attack:
+  "All passphrase1 #i #j.
+    (In(gen_passphrase(passphrase1)) @ #i & In(gen_passphrase(passphrase1)) @ #j) ==> #i = #j"
+
+// Secure communication: Ensure that a secure connection is only established after successful verification.
+lemma Secure_Communication:
+  "All passphrase2 #i #j.
+    (In(gen_passphrase(passphrase2)) @ #i & Out(secure_connect(success)) @ #j) ==> #i < #j"
+
+// Deletion of passphrase_1: Ensure that passphrase_1 is deleted after successful enrollment.
+lemma Delete_Passphrase_One:
+  "All passphrase1 #i #j.
+    (Out(secure_connect(success)) @ #i & Out(delete_passphrase(passphrase1)) @ #j) ==> #i < #j"
+
+// Existence of a successful trace: Ensure that the protocol can successfully complete.
+lemma Exists_Successful_Trace:
+  exists-trace
+  "Ex ID passphrase1 passphrase2 #i #j #k #l #m #n.
+    In(broadcast(ID)) @ #i & 
+    In(gen_passphrase(passphrase1)) @ #j &
+    In(mac(ssid, passphrase1)) @ #k &
+    In(assoc_req(ssid, hash(passphrase1))) @ #l &
+    In(gen_passphrase(passphrase2)) @ #m &
+    Out(secure_connect(success)) @ #n"
+
+// Mutual agreement on passphrase_2: Ensure both enrollee and access point agree on passphrase_2.
+lemma Mutual_Passphrase_Agreement:
+  "All passphrase2 #i #j.
+    (In(gen_passphrase(passphrase2)) @ #i & Out(gen_passphrase(passphrase2)) @ #j) ==> #i < #j"
+
+// Non-repudiation: Ensure that both parties cannot deny the actions they took.
+lemma Non_Repudiation:
+  "All passphrase2 #j.
+    (Out(gen_passphrase(passphrase2)) @ #j) ==> (Ex passphrase1 #k. In(gen_passphrase(passphrase1)) @ #k & #k < #j)"
+
+// Session uniqueness: Ensure that each generated passphrase is unique to prevent session overlap.
+lemma Unique_Session:
+  "All passphrase1 passphrase2 #i #j.
+    (In(gen_passphrase(passphrase1)) @ #i & In(gen_passphrase(passphrase2)) @ #j & passphrase1 = passphrase2) ==> #i = #j"
+
+// Confidentiality of passphrase_2: Ensure that passphrase_2 is kept confidential from adversaries.
+lemma Passphrase2_Confidentiality:
+  "All passphrase2 #i #j.
+    (Out(gen_passphrase(passphrase2)) @ #i & K(passphrase2) @ #j) ==> #i = #j"  // Passphrase_2 must remain secret
+
+end
